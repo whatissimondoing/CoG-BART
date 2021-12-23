@@ -59,7 +59,7 @@ For IEMOCAP: `bash train.sh IEMOCAP`
 
 For DailyDialog: `bash train.sh DailyDialog`
 
->It should be noticed that performance is greatly affected by random seed. So we recommended some seed in the script for reproduction.
+>It should be noticed that performance is greatly affected by random seed. So we recommended some seeds in the script for reproduction.
 
 ## Evaluation and Prediction:
 
@@ -89,6 +89,6 @@ If you find this work useful, please cite our work:
 
 ## Acknowledgement
 
-Some code of this project is referenced from [TodKat](https://github.com/something678/TodKat)
+Some code of this project are referenced from [TodKat](https://github.com/something678/TodKat)
 and [DialogXL](https://github.com/shenwzh3/DialogXL). We thank their open source materials for contribution to this task.
 
