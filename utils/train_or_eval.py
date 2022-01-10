@@ -1,6 +1,6 @@
 import os
 import torch
-# import fitlog
+import fitlog
 import logging
 import numpy as np
 
@@ -15,7 +15,7 @@ from transformers import (
 logger = logging.getLogger(__name__)
 
 
-def train(train_dataloader, eval_dataloader, model, training_args, other_args):
+def train(train_dataloader, eval_dataloader, test_dataloader, model, training_args, other_args):
     if not os.path.exists(training_args.output_dir):
         os.makedirs(training_args.output_dir)
 
@@ -73,24 +73,24 @@ def train(train_dataloader, eval_dataloader, model, training_args, other_args):
 
             if training_args.logging_steps > 0 and global_step % training_args.logging_steps == 0:
 
-                # fitlog.add_loss(loss, name="Loss", step=global_step)
-                # fitlog.add_loss(ce_loss, name="CE_Loss", step=global_step)
-                # fitlog.add_loss(cl_loss, name="CL_Loss", step=global_step)
-                # fitlog.add_loss(gen_loss, name="Gen_Loss", step=global_step)
+                fitlog.add_loss(loss, name="Loss", step=global_step)
+                fitlog.add_loss(ce_loss, name="CE_Loss", step=global_step)
+                fitlog.add_loss(cl_loss, name="CL_Loss", step=global_step)
+                fitlog.add_loss(gen_loss, name="Gen_Loss", step=global_step)
 
                 results = evaluate(training_args, other_args, eval_dataloader, model, "evaluate")
                 torch.cuda.empty_cache()
                 res_for_display = {}
                 for k, v in results.items():
                     res_for_display[k.replace("-", "_")] = v
-                # fitlog.add_metric({"dev": res_for_display}, step=global_step)
+                fitlog.add_metric({"dev": res_for_display}, step=global_step)
                 if other_args.task_name in ['MELD', 'IEMOCAP', 'EmoryNLP']:
                     eval_metrics = 'macro_f1'
                 else:
                     eval_metrics = 'micro_f1'
                 if results[eval_metrics] > best_score:
                     best_score = results[eval_metrics]
-                    # fitlog.add_best_metric({"dev": {eval_metrics: best_score}})
+                    fitlog.add_best_metric({"dev": {eval_metrics: best_score}})
 
                     # save the best model
                     output_dir = os.path.join(training_args.output_dir, "best_model_%d" % training_args.seed)
@@ -98,12 +98,12 @@ def train(train_dataloader, eval_dataloader, model, training_args, other_args):
                     model_to_save.save_pretrained(output_dir)
                     logger.info("Saving model checkpoint to %s", output_dir)
 
-                    # results = evaluate(training_args, other_args, test_dataloader, model, "predict")
-                    # fitlog.add_metric({"test": {'macro_f1': results['macro_f1']}}, step=global_step)
-                    # fitlog.add_metric({"test": {'micro_f1': results['micro_f1']}}, step=global_step)
-                    #
-                    # fitlog.add_best_metric({"test": {'macro_f1': results['macro_f1']}})
-                    # fitlog.add_best_metric({"test": {'micro_f1': results['micro_f1']}})
+                    results = evaluate(training_args, other_args, test_dataloader, model, "predict")
+                    fitlog.add_metric({"test": {'macro_f1': results['macro_f1']}}, step=global_step)
+                    fitlog.add_metric({"test": {'micro_f1': results['micro_f1']}}, step=global_step)
+
+                    fitlog.add_best_metric({"test": {'macro_f1': results['macro_f1']}})
+                    fitlog.add_best_metric({"test": {'micro_f1': results['micro_f1']}})
 
         torch.cuda.empty_cache()
 
@@ -129,10 +129,10 @@ def evaluate(training_args, other_args, eval_loader, model, eval_or_test):
         # -------------- eval classification --------------
         accuracy = round(accuracy_score(labels_id, preds_id) * 100, 4)
         if other_args.task_name in ['MELD', 'EmoryNLP', 'IEMOCAP']:
-            macro_f1 = f1_score(preds_id, labels_id, labels=[i for i in range(other_args.num_labels)], average='weighted')
+            macro_f1 = f1_score(labels_id, preds_id, labels=[i for i in range(other_args.num_labels)], average='weighted')
             micro_f1 = f1_score(labels_id, preds_id, labels=[i for i in range(other_args.num_labels)], average='micro')
         else:
-            macro_f1 = f1_score(preds_id, labels_id, labels=[i for i in range(1, other_args.num_labels)], average='weighted')
+            macro_f1 = f1_score(labels_id, preds_id, labels=[i for i in range(1, other_args.num_labels)], average='weighted')
             micro_f1 = f1_score(labels_id, preds_id, labels=[i for i in range(1, other_args.num_labels)], average='micro')
         results['acc'] = accuracy
         results['macro_f1'] = round(macro_f1 * 100, 4)

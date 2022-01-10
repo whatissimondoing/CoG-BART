@@ -2,34 +2,10 @@
 
 [Contrast and Generation Make BART a Good Dialogue Emotion Recognizer](https://arxiv.org/abs/2112.11202)
 
+>Bug report:
+> 
+> There was a bug found in the project we referenced (see [something678/TodKat#10](https://github.com/something678/TodKat/issues/10)), so it was inherited as well. We have fixed the bug and the new result will be reported later.
 
-## Quick Start:
-------------------------------------------------------
-To run the model on test sets of four datasets,
-
-1. Download the pre-trained models:
-
-   * For MELD:
-       download the checkpoint: [best_model_939239.tar](https://www.dropbox.com/s/c6tfmy9vuxtqpx4/best_model_939239.tar?dl=0) ,unzip the file to ./save/MELD
-   
-   * For IEMOCAP:
-       download the checkpoint: [best_model_625968.tar](https://www.dropbox.com/s/btc68s239zcf9dj/best_model_625968.tar?dl=0) ,unzip the file to ./save/IEMOCAP
-   
-   * For EmoryNLP:
-       download the checkpoint: [best_model_552848.tar](https://www.dropbox.com/s/dcucsdee8hmhu0o/best_model_552848.tar?dl=0) ,unzip the file to ./save/EmoryNLP
-   
-   * For DailyDialog:
-       download the checkpoint: [best_model_269130.tar](https://www.dropbox.com/s/rgn6o2obbaz8vh4/best_model_269130.tar?dl=0) ,unzip the file to ./save/DailyDialog
-
-2. Execute the following command in terminal:
-
-    * For MELD: `bash eval.sh MELD save/MELD/best_model_939239`
-
-    * For EmoryNLP: `bash eval.sh EmoryNLP save/EmoryNLP/best_model_552848`
-
-    * For IEMOCAP: `bash eval.sh IEMOCAP save/IEMOCAP/best_model_625968`
-
-    * For DailyDialog: `bash eval.sh DailyDialog save/DailyDialog/best_model_269130`
 
 
 ## Required Packages:
