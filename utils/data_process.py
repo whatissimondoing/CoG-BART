@@ -32,19 +32,19 @@ def flat_data(dataset_name, train_dev_pred, with_speaker):
                 final_json.append(new_sentence)
         json_data = json.dumps(final_json)
         f.write(json_data)
-    print(sentence_count)
-    print(sent_with_label)
 
 
-def split_data_with_generation(dataset_name, train_dev_pred, with_speaker):
+def split_data(dataset_name, train_dev_pred, with_speaker, with_generation):
     with open('./data/%s/%s_data.json' % (dataset_name, train_dev_pred), encoding='utf-8') as f:
         data_raw = json.load(f)
     data_raw = sorted(data_raw, key=lambda x: len(x), reverse=True)
     final_json = []
-    with open('./data/%s/%s_data_flat_generation.json' % (dataset_name, train_dev_pred), "w") as f:
-        for index, context in enumerate(tqdm(data_raw, desc="preprocessing %s dataset" % train_dev_pred)):
+    with open('./data/%s/%s_data_generation.json' % (dataset_name, train_dev_pred), "w") as f:
+        for context_index, context in enumerate(tqdm(data_raw, desc="preprocessing %s dataset" % train_dev_pred)):
             context_len = len(context)
-            for index in range(context_len):
+            new_context = []
+            index = 0
+            while index < context_len:
                 sentence = context[index]
                 if 'label' in sentence:
                     if index == context_len - 1:
@@ -58,11 +58,37 @@ def split_data_with_generation(dataset_name, train_dev_pred, with_speaker):
                         sent_with_speaker = sentence["speaker"] + " : " + sentence["text"]
                     else:
                         sent_with_speaker = sentence["text"]
-                    new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
-                                    "next_sentence": next_sentence}
-                else:
-                    continue
-                final_json.append(new_sentence)
+                    if with_generation:
+                        new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
+                                        "next_sentence": next_sentence}
+                    else:
+                        new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"]}
+                    new_context.append(new_sentence)
+                    if len(new_context) == 8:
+                        final_json.append(new_context)
+                        new_context = []
+                index += 1
+            if len(new_context) > 0:
+                final_json.append(new_context)
+            # for index in range(context_len):
+            #     sentence = context[index]
+            #     if 'label' in sentence:
+            #         if index == context_len - 1:
+            #             next_sentence = 'end'
+            #         else:
+            #             if with_speaker:
+            #                 next_sentence = context[index + 1]["speaker"] + " : " + context[index + 1]["text"]
+            #             else:
+            #                 next_sentence = context[index + 1]["text"]
+            #         if with_speaker:
+            #             sent_with_speaker = sentence["speaker"] + " : " + sentence["text"]
+            #         else:
+            #             sent_with_speaker = sentence["text"]
+            #         new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
+            #                         "next_sentence": next_sentence}
+            #     else:
+            #         continue
+
         json_data = json.dumps(final_json)
         f.write(json_data)
 
@@ -79,12 +105,9 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     print("Start preprocess data")
-    if args.train_with_generation:
-        split_data_with_generation(args.task_name, 'train', args.train_with_speaker)
-        split_data_with_generation(args.task_name, 'dev', args.train_with_speaker)
-        split_data_with_generation(args.task_name, 'test', args.train_with_speaker)
-    else:
-        flat_data(args.task_name, 'train', args.train_with_speaker)
-        flat_data(args.task_name, 'dev', args.train_with_speaker)
-        flat_data(args.task_name, 'test', args.train_with_speaker)
+
+    split_data(args.task_name, 'train', args.train_with_speaker, args.train_with_generation)
+    split_data(args.task_name, 'dev', args.train_with_speaker, args.train_with_generation)
+    split_data(args.task_name, 'test', args.train_with_speaker, args.train_with_generation)
+
     print("Preprocess data complete")

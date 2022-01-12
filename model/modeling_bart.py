@@ -900,3 +900,203 @@ class BartForMultiTask(BartPretrainedModel):
                 tuple(past_state.index_select(0, beam_idx) for past_state in layer_past[:2]) + layer_past[2:],
             )
         return reordered_past
+
+
+class BartForERC(BartPretrainedModel):
+    base_model_prefix = "model"
+    _keys_to_ignore_on_load_missing = [r"final_logits_bias", r"lm_head\.weight"]
+
+    def __init__(self, config: BartConfig, temperature, alpha, beta, use_trans_layer):
+        super().__init__(config)
+        self.model = BartModel(config)
+        self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
+        self.lm_head = nn.Linear(config.d_model, self.model.shared.num_embeddings, bias=False)
+
+        self.init_weights()
+
+        self.transformer_unit = TransformerUnit(d_model=config.hidden_size, n_heads=8)
+        self.ffn = nn.Sequential(nn.Linear(config.hidden_size, 400),
+                                 nn.Dropout(0.3),
+                                 nn.GELU(),
+                                 nn.Linear(400, config.num_labels))
+
+        self.temperature = temperature
+        self.alpha = alpha
+        self.beta = beta
+        self.num_labels = config.num_labels
+        self.use_trans_layer = use_trans_layer
+
+    def get_encoder(self):
+        return self.model.get_encoder()
+
+    def get_decoder(self):
+        return self.model.get_decoder()
+
+    def resize_token_embeddings(self, new_num_tokens: int) -> nn.Embedding:
+        new_embeddings = super().resize_token_embeddings(new_num_tokens)
+        self._resize_final_logits_bias(new_num_tokens)
+        return new_embeddings
+
+    def _resize_final_logits_bias(self, new_num_tokens: int) -> None:
+        old_num_tokens = self.final_logits_bias.shape[-1]
+        if new_num_tokens <= old_num_tokens:
+            new_bias = self.final_logits_bias[:, :new_num_tokens]
+        else:
+            extra_bias = torch.zeros((1, new_num_tokens - old_num_tokens), device=self.final_logits_bias.device)
+            new_bias = torch.cat([self.final_logits_bias, extra_bias], dim=1)
+        self.register_buffer("final_logits_bias", new_bias)
+
+    def get_output_embeddings(self):
+        return self.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm_head = new_embeddings
+
+    def forward(
+            self,
+            input_ids=None,
+            attention_mask=None,
+            decoder_input_ids=None,
+            decoder_attention_mask=None,
+            head_mask=None,
+            decoder_head_mask=None,
+            cross_attn_head_mask=None,
+            encoder_outputs=None,
+            past_key_values=None,
+            inputs_embeds=None,
+            decoder_inputs_embeds=None,
+            labels=None,
+            use_cache=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
+            speakers=None,
+            next_input_ids=None,
+            next_attention_mask=None,
+    ):
+        r"""
+        labels (:obj:`torch.LongTensor` of shape :obj:`(batch_size, sequence_length)`, `optional`):
+            Labels for computing the masked language modeling loss. Indices should either be in ``[0, ...,
+            config.vocab_size]`` or -100 (see ``input_ids`` docstring). Tokens with indices set to ``-100`` are ignored
+            (masked), the loss is only computed for the tokens with labels in ``[0, ..., config.vocab_size]``.
+
+        Returns:
+        """
+
+        context_mask = torch.sum(attention_mask, dim=-1).gt(0)
+
+        batch_size, max_seq_len_ex, max_text_seq_len = input_ids.shape
+        seqlens = torch.sum(context_mask, dim=-1)
+
+        if next_input_ids is not None:
+            decoder_input_ids = shift_tokens_right(
+                next_input_ids[context_mask, :], self.config.pad_token_id, self.config.decoder_start_token_id
+            )
+            # hidden state for generation
+            outputs_gen = self.model(input_ids=input_ids[context_mask, :],
+                                     attention_mask=attention_mask[context_mask, :],
+                                     decoder_input_ids=decoder_input_ids)
+            hidden_states_gen = outputs_gen.last_hidden_state
+            gen_logits = self.lm_head(hidden_states_gen) + self.final_logits_bias
+        # hidden state for classification
+        outputs_cls = self.model(input_ids=input_ids[context_mask, :],
+                                 attention_mask=attention_mask[context_mask, :])
+        hidden_states_cls = outputs_cls.last_hidden_state
+
+        mask_for_fill = attention_mask[context_mask, :].unsqueeze(-1).expand(-1, -1, hidden_states_cls.shape[-1]).bool()
+
+        hidden_states_dropout = hidden_states_cls.clone().detach()
+
+        hidden_states = hidden_states_cls.masked_fill(~mask_for_fill, -1e8)  # mask position of padding with -1e8
+        hidden_states_dropout = hidden_states_dropout.masked_fill(~mask_for_fill, -1e8)
+        cls_tokens, _ = torch.max(hidden_states, dim=1)  # max pooling
+        cls_tokens_dropout, _ = torch.max(hidden_states_dropout, dim=1)
+
+        if self.use_trans_layer:
+
+            we_dim = self.config.hidden_size
+            for ibatch in range(batch_size):
+                fullzeropad4insert = torch.zeros([max_seq_len_ex - seqlens[ibatch], we_dim], device=cls_tokens.device)
+                index4insert = ibatch * max_seq_len_ex + seqlens[ibatch]
+                cls_tokens = torch.cat([cls_tokens[:index4insert], fullzeropad4insert, cls_tokens[index4insert:]], dim=0)
+                cls_tokens_dropout = torch.cat([cls_tokens_dropout[:index4insert], fullzeropad4insert, cls_tokens_dropout[index4insert:]], dim=0)
+            cls_tokens = cls_tokens.view(batch_size, max_seq_len_ex, we_dim)
+            cls_tokens_dropout = cls_tokens_dropout.view(batch_size, max_seq_len_ex, we_dim)
+
+            cls_tokens = self.transformer_unit(cls_tokens)
+            cls_tokens_dropout = self.transformer_unit(cls_tokens_dropout)
+
+        logits = self.ffn(cls_tokens)
+        logits_dropout = self.ffn(cls_tokens_dropout)
+
+        loss_fct = CrossEntropyLoss()
+
+        if next_input_ids is not None:
+            gen_loss = loss_fct(gen_logits.view(-1, self.config.vocab_size), next_input_ids[context_mask, :].view(-1))
+        else:
+            gen_loss = 0
+
+        if labels is not None:
+            ce_loss = loss_fct(logits[context_mask, :], labels[context_mask])
+            cl_loss = SupConLoss(temperature=self.temperature,
+                                 features=torch.stack([logits[context_mask, :], logits_dropout[context_mask, :]], dim=1),
+                                 labels=labels[context_mask])
+            loss = (1 - self.alpha - self.beta) * ce_loss + self.alpha * cl_loss + self.beta * gen_loss
+            # return loss, ce_loss, cl_loss, gen_loss
+            return Seq2SeqLMOutput(
+                loss=loss,
+                ce_loss=ce_loss,
+                cl_loss=cl_loss,
+                gen_loss=gen_loss
+            )
+        else:  # evaluate
+            return Seq2SeqLMOutput(
+                loss=None,
+                logits=None,
+                cls_logits=logits[context_mask, :],
+                last_hidden_states=cls_tokens[context_mask, :],
+            )
+
+
+def prepare_inputs_for_generation(
+        self,
+        decoder_input_ids,
+        past=None,
+        attention_mask=None,
+        head_mask=None,
+        decoder_head_mask=None,
+        cross_attn_head_mask=None,
+        use_cache=None,
+        encoder_outputs=None,
+        **kwargs
+):
+    # cut decoder_input_ids if past is used
+    if past is not None:
+        decoder_input_ids = decoder_input_ids[:, -1:]
+
+    return {
+        "input_ids": None,  # encoder_outputs is defined. input_ids not needed
+        "encoder_outputs": encoder_outputs,
+        "past_key_values": past,
+        "decoder_input_ids": decoder_input_ids,
+        "attention_mask": attention_mask,
+        "head_mask": head_mask,
+        "decoder_head_mask": decoder_head_mask,
+        "cross_attn_head_mask": cross_attn_head_mask,
+        "use_cache": use_cache,  # change this to avoid caching (presumably for debugging)
+    }
+
+
+def prepare_decoder_input_ids_from_labels(self, labels: torch.Tensor):
+    return shift_tokens_right(labels, self.config.pad_token_id, self.config.decoder_start_token_id)
+
+
+@staticmethod
+def _reorder_cache(past, beam_idx):
+    reordered_past = ()
+    for layer_past in past:
+        # cached cross_attention states don't have to be reordered -> they are always the same
+        reordered_past += (
+            tuple(past_state.index_select(0, beam_idx) for past_state in layer_past[:2]) + layer_past[2:],
+        )
+    return reordered_past

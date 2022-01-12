@@ -9,7 +9,7 @@ from utils.loggingHandler import LoggingHandler
 from utils.train_or_eval import train, evaluate
 from utils.dataloader import get_dataloaders, load_vocab
 
-from model.modeling_bart import BartForMultiTask
+from model.modeling_bart import BartForMultiTask, BartForERC
 
 from transformers import (AutoTokenizer,
                           HfArgumentParser,
@@ -148,8 +148,9 @@ if __name__ == '__main__':
     model_args, data_args, training_args, other_args = parser.parse_args_into_dataclasses()
     # Set seed before initializing model.
     # set_seed(training_args.seed)
-    # fitlog.set_log_dir('/remote-home/smli/Project/TodKat/logs/')
-    rnd_seed = fitlog.set_rng_seed(rng_seed=training_args.seed)
+    fitlog.set_log_dir('/remote-home/smli/Project/CoG-BART/logs/')
+    rnd_seed = fitlog.set_rng_seed()
+    training_args.seed = rnd_seed
 
     logger.info("The random seed is %d" % rnd_seed)
 
@@ -162,27 +163,27 @@ if __name__ == '__main__':
     tokenizer = AutoTokenizer.from_pretrained(
         "facebook/bart-base",
         cache_dir=None,
-        use_fast=True,
-        local_files_only=True, )
+        use_fast=True)
 
     train_dataloader, eval_dataloader, test_dataloader = get_dataloaders(tokenizer, other_args.task_name,
                                                                          train_batch_size=training_args.per_device_train_batch_size,
                                                                          eval_batch_size=training_args.per_device_eval_batch_size,
                                                                          device=device,
-                                                                         train_with_generation=other_args.train_with_generation)
+                                                                         train_with_generation=other_args.train_with_generation,
+                                                                         max_seq_length=128)
 
-    # param_dict = {}
-    # for k, v in vars(training_args).items():
-    #     param_dict[k] = v
-    # for k, v in vars(data_args).items():
-    #     param_dict[k] = v
-    # for k, v in vars(model_args).items():
-    #     param_dict[k] = v
-    # for k, v in vars(other_args).items():
-    #     param_dict[k] = v
-    #
-    # fitlog.add_hyper(param_dict)
-    # fitlog.add_hyper_in_file(__file__)
+    param_dict = {}
+    for k, v in vars(training_args).items():
+        param_dict[k] = v
+    for k, v in vars(data_args).items():
+        param_dict[k] = v
+    for k, v in vars(model_args).items():
+        param_dict[k] = v
+    for k, v in vars(other_args).items():
+        param_dict[k] = v
+
+    fitlog.add_hyper(param_dict)
+    fitlog.add_hyper_in_file(__file__)
 
     try:
 
@@ -198,7 +199,7 @@ if __name__ == '__main__':
             )
             config.use_cache = True
 
-            model = BartForMultiTask.from_pretrained(
+            model = BartForERC.from_pretrained(
                 model_args.model_name_or_path,
                 from_tf=bool(".ckpt" in model_args.model_name_or_path),
                 config=config,
@@ -213,9 +214,9 @@ if __name__ == '__main__':
 
             model = model.to(device)
 
-            train(train_dataloader, eval_dataloader, model, training_args, other_args)
+            train(train_dataloader, eval_dataloader, test_dataloader, model, training_args, other_args)
 
-            # fitlog.finish()
+            fitlog.finish()
 
     except KeyboardInterrupt:
         print("Catch keyboard interrupt.")
@@ -229,7 +230,7 @@ if __name__ == '__main__':
 
         config = AutoConfig.from_pretrained(best_model_path)
 
-        model = BartForMultiTask.from_pretrained(
+        model = BartForERC.from_pretrained(
             best_model_path,
             from_tf=bool(".ckpt" in model_args.model_name_or_path),
             config=config,

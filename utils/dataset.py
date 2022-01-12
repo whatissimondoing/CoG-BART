@@ -2,6 +2,7 @@ import json
 import torch
 import pickle
 from torch.utils.data import Dataset
+import torch.nn.functional as F
 
 
 class ERCDatasetFlat(Dataset):
@@ -15,7 +16,7 @@ class ERCDatasetFlat(Dataset):
 
     def get_bart_feature(self, sentence, tokenizer):
         # inputs = tokenizer(sentence, max_length=1024, padding=True, truncation=True, return_tensors="pt")
-        inputs = tokenizer(sentence, max_length=True, padding=True, truncation=True, return_tensors="pt")
+        inputs = tokenizer(sentence, max_length=128, padding=True, truncation=True, return_tensors="pt")
         inputs = inputs.to(self.device)
         return inputs
 
@@ -80,7 +81,7 @@ class ERCDatasetFlatGeneration(Dataset):
         self.label_vocab = None
 
     def get_bart_feature(self, sentence, tokenizer):
-        inputs = tokenizer(sentence, max_length=True, padding=True, truncation=True, return_tensors="pt")
+        inputs = tokenizer(sentence, max_length=128, padding='max_length', truncation=True, return_tensors="pt")
         inputs = inputs.to(self.device)
         return inputs
 
@@ -136,5 +137,138 @@ class ERCDatasetFlatGeneration(Dataset):
         inputs['speakers'] = speaker
         inputs['next_sentence'] = next_sentence['input_ids']
         inputs['next_sentence_attn'] = next_sentence['attention_mask']
+
+        return inputs
+
+
+class ERCDataset(Dataset):
+
+    def __init__(self, dataset_name, split, tokenizer, max_seq_length, device):
+        self.tokenizer = tokenizer
+        self.device = device
+        self.dataset_name = dataset_name
+        self.data = self.read(dataset_name, split)
+        self.len = len(self.data)
+        self.label_vocab = None
+        self.max_seq_length = max_seq_length
+
+    def get_bart_feature(self, sentence, tokenizer):
+        inputs = tokenizer(sentence, max_length=self.max_seq_length, padding='max_length', truncation=True, return_tensors="pt")
+        inputs = inputs.to(self.device)
+        return inputs
+
+    def read(self, dataset_name, split):
+
+        with open('./data/%s/%s_data_generation.json' % (dataset_name, split), encoding='utf-8') as f:
+            raw_data = json.load(f)
+        self.label_vocab = pickle.load(open('./data/%s/label_vocab.pkl' % dataset_name, 'rb'))
+        self.speaker_vocab = pickle.load(open('./data/%s/speaker_vocab.pkl' % (dataset_name), 'rb'))
+        # process dialogue
+        dialogs = []
+        for d in raw_data:
+            utterances = []
+            labels = []
+            speakers = []
+            next_sentence = []
+            for i, u in enumerate(d):
+                # convert label from text to number
+                label_id = self.label_vocab['stoi'][u['label']] if 'label' in u.keys() else -100
+                utterances.append(u['text'])
+                next_sentence.append(u['next_sentence'])
+                labels.append(int(label_id))
+                speakers.append(self.speaker_vocab['stoi'][u['speaker']])
+            dialogs.append({
+                'utterances': utterances,
+                'labels': labels,
+                'speakers': speakers,
+                'next_sentences': next_sentence
+            })
+        # random.shuffle(dialogs)
+        return dialogs
+
+    def __getitem__(self, index):
+        """
+        :param index:
+        :return:
+        """
+        return self.data[index]['utterances'], self.data[index]['labels'], self.data[index]['speakers'], self.data[index]['next_sentences']
+
+    def __len__(self):
+        return self.len
+
+    def collate_fn(self, datas):
+        """
+
+        :param datas:
+        :return:
+        inputs['input_ids'] (Batch_size, Utter_len, Sent_len)
+        inputs['attention_mask'] (Batch_size, Utter_len, Sent_len)
+        inputs['decoder_input_ids'] (Batch_size, Utter_len)
+        inputs['decoder_attention_mask'] (Batch_size, Utter_len)
+        """
+        expend_utterance = []
+        expend_atten_mask = []
+        expand_next_sent = []
+        expand_next_attn = []
+        expend_labels = []
+        expend_speakers = []
+        max_utter_len = 0
+        max_sent_len = 0
+        max_label_len = 0
+        inputs = {}
+        for data in datas:
+            utterance = self.get_bart_feature(data[0], self.tokenizer)
+            label = data[1]
+
+            if utterance['input_ids'].shape[0] > max_utter_len:
+                max_utter_len = utterance['input_ids'].shape[0]
+            if utterance['input_ids'].shape[1] > max_sent_len:
+                max_sent_len = utterance['input_ids'].shape[1]
+            if len(label) > max_label_len:
+                max_label_len = len(label)  # extra <s> and </s> token
+        for data in datas:
+            utterance = self.get_bart_feature(data[0], self.tokenizer)
+            next_utter = self.get_bart_feature(data[3], self.tokenizer)
+            label = data[1]
+
+            label = torch.tensor(label, device=utterance['input_ids'].device)
+            speaker = torch.tensor(data[2], device=utterance['input_ids'].device)
+            utter_diff = max_utter_len - utterance['input_ids'].shape[0]
+            sent_diff = max_sent_len - utterance['input_ids'].shape[1]
+            label_diff = max_label_len - label.shape[0]
+            # utterance['input_ids'] = utterance['input_ids']
+            # utterance['attention_mask'] = utterance['attention_mask']
+
+            utterance['input_ids'] = F.pad(input=utterance['input_ids'], pad=(0, sent_diff, 0, utter_diff),
+                                           mode='constant',
+                                           value=1)  # pad number of utterence and sentence to max length
+            utterance['attention_mask'] = F.pad(input=utterance['attention_mask'], pad=(0, sent_diff, 0, utter_diff),
+                                                mode='constant',
+                                                value=0)
+            next_utter['input_ids'] = F.pad(input=next_utter['input_ids'], pad=(0, sent_diff, 0, utter_diff),
+                                            mode='constant',
+                                            value=1)
+            next_utter['attention_mask'] = F.pad(input=next_utter['attention_mask'], pad=(0, sent_diff, 0, utter_diff),
+                                                 mode='constant',
+                                                 value=0)
+            # begin_end_index = torch.tensor([0, 2]).expand(utter_diff, 2)
+            # if utter_diff > 0:
+            #     utterance['input_ids'][-utter_diff:, 0:2] = begin_end_index  # pad <s> and </s> token in the beginning of sequence
+            label = F.pad(input=label, pad=(0, label_diff), mode='constant', value=-100)
+            speaker = F.pad(input=speaker, pad=(0, label_diff), mode='constant', value=-100)
+
+            expend_speakers.append(speaker)
+            expend_labels.append(label)
+            expend_utterance.append(utterance['input_ids'])
+            expend_atten_mask.append(utterance['attention_mask'])
+            expand_next_sent.append(utterance['input_ids'])
+            expand_next_attn.append(utterance['attention_mask'])
+
+        inputs['input_ids'] = torch.stack(expend_utterance)
+        inputs['attention_mask'] = torch.stack(expend_atten_mask)
+        inputs['next_input_ids'] = torch.stack(expand_next_sent)
+        inputs['next_attention_mask'] = torch.stack(expand_next_attn)
+        inputs['labels'] = torch.stack(expend_labels)
+        inputs['speakers'] = torch.stack(expend_speakers)
 
         return inputs
