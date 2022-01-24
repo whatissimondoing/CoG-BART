@@ -95,7 +95,7 @@ def train(train_dataloader, eval_dataloader, test_dataloader, model, training_ar
                     # save the best model
                     output_dir = os.path.join(training_args.output_dir, "best_model_%d" % training_args.seed)
                     model_to_save = (model.module if hasattr(model, "module") else model)  # Take care of distributed/parallel training
-                    # model_to_save.save_pretrained(output_dir)
+                    model_to_save.save_pretrained(output_dir)
                     logger.info("Saving model checkpoint to %s", output_dir)
 
                     results = evaluate(training_args, other_args, test_dataloader, model, "predict")
@@ -158,19 +158,14 @@ def evaluate(training_args, other_args, eval_loader, model, eval_or_test):
     # eval_loss = 0.0
 
     all_preds, all_labels = [], []
-    # all_input_ids = []
-    # all_hidden_state = []
-    # max_input_len = 0
 
     for batch in tqdm(eval_loader, desc=eval_or_test):
         model.eval()
         batch = tuple(v.to(training_args.device) for _, v in batch.items())
 
         with torch.no_grad():
-            inputs = {'input_ids': batch[0], 'attention_mask': batch[1], 'speakers': batch[5]}
-            labels = batch[4]
-
-            # all_input_ids.append(batch[0].cpu().numpy())
+            inputs = {'input_ids': batch[0], 'attention_mask': batch[1], 'speakers': batch[3]}
+            labels = batch[2]
 
             labels = labels[labels.ne(-100)].cpu().numpy()
 
@@ -180,10 +175,6 @@ def evaluate(training_args, other_args, eval_loader, model, eval_or_test):
             preds = preds.cpu().numpy()
             all_labels.append(labels)
             all_preds.append(preds)
-
-            # max_input_len = max(max_input_len, inputs["input_ids"].shape[-1])
-            # hidden_state = outputs.last_hidden_states.cpu().numpy()
-            # all_hidden_state.append(hidden_state)
 
     all_preds = np.concatenate(all_preds, axis=0)
     all_labels = np.concatenate(all_labels, axis=0)

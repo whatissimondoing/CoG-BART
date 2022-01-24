@@ -1012,17 +1012,16 @@ class BartForERC(BartPretrainedModel):
         cls_tokens, _ = torch.max(hidden_states, dim=1)  # max pooling
         cls_tokens_dropout, _ = torch.max(hidden_states_dropout, dim=1)
 
+        we_dim = self.config.hidden_size
+        for ibatch in range(batch_size):
+            fullzeropad4insert = torch.zeros([max_seq_len_ex - seqlens[ibatch], we_dim], device=cls_tokens.device)
+            index4insert = ibatch * max_seq_len_ex + seqlens[ibatch]
+            cls_tokens = torch.cat([cls_tokens[:index4insert], fullzeropad4insert, cls_tokens[index4insert:]], dim=0)
+            cls_tokens_dropout = torch.cat([cls_tokens_dropout[:index4insert], fullzeropad4insert, cls_tokens_dropout[index4insert:]], dim=0)
+        cls_tokens = cls_tokens.view(batch_size, max_seq_len_ex, we_dim)
+        cls_tokens_dropout = cls_tokens_dropout.view(batch_size, max_seq_len_ex, we_dim)
+
         if self.use_trans_layer:
-
-            we_dim = self.config.hidden_size
-            for ibatch in range(batch_size):
-                fullzeropad4insert = torch.zeros([max_seq_len_ex - seqlens[ibatch], we_dim], device=cls_tokens.device)
-                index4insert = ibatch * max_seq_len_ex + seqlens[ibatch]
-                cls_tokens = torch.cat([cls_tokens[:index4insert], fullzeropad4insert, cls_tokens[index4insert:]], dim=0)
-                cls_tokens_dropout = torch.cat([cls_tokens_dropout[:index4insert], fullzeropad4insert, cls_tokens_dropout[index4insert:]], dim=0)
-            cls_tokens = cls_tokens.view(batch_size, max_seq_len_ex, we_dim)
-            cls_tokens_dropout = cls_tokens_dropout.view(batch_size, max_seq_len_ex, we_dim)
-
             cls_tokens = self.transformer_unit(cls_tokens)
             cls_tokens_dropout = self.transformer_unit(cls_tokens_dropout)
 

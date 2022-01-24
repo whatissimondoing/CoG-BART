@@ -58,11 +58,11 @@ def split_data(dataset_name, train_dev_pred, with_speaker, with_generation):
                         sent_with_speaker = sentence["speaker"] + " : " + sentence["text"]
                     else:
                         sent_with_speaker = sentence["text"]
-                    if with_generation:
-                        new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
-                                        "next_sentence": next_sentence}
-                    else:
-                        new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"]}
+                    # if with_generation:
+                    new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
+                                    "next_sentence": next_sentence}
+                    # else:
+                    #     new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"]}
                     new_context.append(new_sentence)
                     if len(new_context) == 8:
                         final_json.append(new_context)
@@ -70,24 +70,6 @@ def split_data(dataset_name, train_dev_pred, with_speaker, with_generation):
                 index += 1
             if len(new_context) > 0:
                 final_json.append(new_context)
-            # for index in range(context_len):
-            #     sentence = context[index]
-            #     if 'label' in sentence:
-            #         if index == context_len - 1:
-            #             next_sentence = 'end'
-            #         else:
-            #             if with_speaker:
-            #                 next_sentence = context[index + 1]["speaker"] + " : " + context[index + 1]["text"]
-            #             else:
-            #                 next_sentence = context[index + 1]["text"]
-            #         if with_speaker:
-            #             sent_with_speaker = sentence["speaker"] + " : " + sentence["text"]
-            #         else:
-            #             sent_with_speaker = sentence["text"]
-            #         new_sentence = {"text": sent_with_speaker, "speaker": sentence["speaker"], "label": sentence["label"],
-            #                         "next_sentence": next_sentence}
-            #     else:
-            #         continue
 
         json_data = json.dumps(final_json)
         f.write(json_data)

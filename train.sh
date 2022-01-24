@@ -8,10 +8,12 @@ LEARNING_RATE=2e-5
 MODEL_SIZE=large
 ALPHA=0.4
 BETA=0.1
-SEED=42
+TEMPERATURE=1
+SEED=-1
 
 TRAIN_WITH_SPEAKER=1
 TRAIN_WITH_GENERATION=1
+DIALOG_TRANSFORMER=1
 
 python utils/data_process.py \
   --train_with_generation $TRAIN_WITH_GENERATION \
@@ -25,16 +27,18 @@ if [ $TASK = 'MELD' ]; then
     LOGGING_STEPS=40
     WARMUP_RATIO=0.3
     LEARNING_RATE=1e-5
-    ALPHA=0.05
-    BETA=0.05
+    ALPHA=0.5
+    BETA=0.1
   elif [ $MODEL_SIZE = 'large' ]; then
     EPOCHS=4
     TRAIN_BATCH_SIZE=2
-    LOGGING_STEPS=100
-    WARMUP_RATIO=0.5
-    LEARNING_RATE=1e-5
-    ALPHA=0.4
-    BETA=0.05
+    LOGGING_STEPS=80
+    WARMUP_RATIO=0.6
+    LEARNING_RATE=2e-5
+    ALPHA=0.5
+    BETA=0.1
+    TEMPERATURE=5
+    SEED=762985 # or 210414
   fi
 elif [ $TASK = 'EmoryNLP' ]; then
   if [ $MODEL_SIZE = 'base' ]; then
@@ -46,13 +50,15 @@ elif [ $TASK = 'EmoryNLP' ]; then
     ALPHA=0.2
     BETA=0.1
   elif [ $MODEL_SIZE = 'large' ]; then
-    EPOCHS=10
+    EPOCHS=12
     TRAIN_BATCH_SIZE=2
-    LOGGING_STEPS=80
-    WARMUP_RATIO=0.4
+    LOGGING_STEPS=50
+    WARMUP_RATIO=0.6
     LEARNING_RATE=1e-5
     ALPHA=0.2
     BETA=0.1
+    TEMPERATURE=5
+    SEED=468186
   fi
 elif [ $TASK = 'DailyDialog' ]; then
   if [ $MODEL_SIZE = 'base' ]; then
@@ -61,7 +67,7 @@ elif [ $TASK = 'DailyDialog' ]; then
     LOGGING_STEPS=500
     WARMUP_RATIO=0.3
     LEARNING_RATE=2e-5
-    ALPHA=0.01
+    ALPHA=0.1
     BETA=0.1
   elif [ $MODEL_SIZE = 'large' ]; then
     EPOCHS=4
@@ -71,13 +77,15 @@ elif [ $TASK = 'DailyDialog' ]; then
     LEARNING_RATE=2e-5
     ALPHA=0.1
     BETA=0.1
+    TEMPERATURE=5
+    SEED=738497
   fi
 elif [ $TASK = 'IEMOCAP' ]; then
   if [ $MODEL_SIZE = 'base' ]; then
     EPOCHS=20
     TRAIN_BATCH_SIZE=2
     LOGGING_STEPS=20
-    WARMUP_RATIO=0.1
+    WARMUP_RATIO=0.4
     LEARNING_RATE=1.4e-5
     ALPHA=0.4
     BETA=0.1
@@ -89,6 +97,8 @@ elif [ $TASK = 'IEMOCAP' ]; then
     LEARNING_RATE=2e-5
     ALPHA=0.4
     BETA=0.1
+    TEMPERATURE=5
+    SEED=981929
   fi
 fi
 
@@ -111,8 +121,8 @@ python main.py \
 --seed $SEED \
 --alpha $ALPHA \
 --beta $BETA \
---temperature 1 \
---use_trans_layer 1 \
+--temperature $TEMPERATURE \
+--use_trans_layer $DIALOG_TRANSFORMER \
 --train_with_generation $TRAIN_WITH_GENERATION
 
 

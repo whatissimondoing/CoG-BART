@@ -147,10 +147,10 @@ if __name__ == '__main__':
 
     model_args, data_args, training_args, other_args = parser.parse_args_into_dataclasses()
     # Set seed before initializing model.
-    # set_seed(training_args.seed)
+
     fitlog.set_log_dir('/remote-home/smli/Project/CoG-BART/logs/')
-    rnd_seed = fitlog.set_rng_seed()
-    training_args.seed = rnd_seed
+    rnd_seed = fitlog.set_rng_seed() if training_args.seed == -1 else fitlog.set_rng_seed(training_args.seed)
+    # training_args.seed = rnd_seed
 
     logger.info("The random seed is %d" % rnd_seed)
 

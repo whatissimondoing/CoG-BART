@@ -13,17 +13,11 @@ def load_vocab(dataset_name):
 def get_dataloaders(tokenizer, task_name, train_batch_size=32, eval_batch_size=16, num_workers=0, pin_memory=False, device=None,
                     train_with_generation=1, max_seq_length=128):
     print('building datasets..')
-    if train_with_generation:
-        # trainset = ERCDatasetFlatGeneration(task_name, 'train', tokenizer, device)
-        # devset = ERCDatasetFlatGeneration(task_name, 'dev', tokenizer, device)
-        # testset = ERCDatasetFlatGeneration(task_name, 'test', tokenizer, device)
-        trainset = ERCDataset(task_name, 'train', tokenizer, max_seq_length, device)
-        devset = ERCDataset(task_name, 'dev', tokenizer, max_seq_length, device)
-        testset = ERCDataset(task_name, 'test', tokenizer, max_seq_length, device)
-    else:
-        trainset = ERCDatasetFlat(task_name, 'train', tokenizer, device)
-        devset = ERCDatasetFlat(task_name, 'dev', tokenizer, device)
-        testset = ERCDatasetFlat(task_name, 'test', tokenizer, device)
+
+    trainset = ERCDataset(task_name, 'train', tokenizer, max_seq_length, device, train_with_generation)
+    devset = ERCDataset(task_name, 'dev', tokenizer, max_seq_length, device, train_with_generation)
+    testset = ERCDataset(task_name, 'test', tokenizer, max_seq_length, device, train_with_generation)
+
     train_loader = DataLoader(trainset,
                               batch_size=train_batch_size,
                               shuffle=True,
